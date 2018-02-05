@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+    <sfdc:config name="Salesforce__Basic_Authentication_outbound" username="#[flowVars.username]" password="#[flowVars.password]" securityToken="#[flowVars.securityToken]" proxyHost="hydproxy.igate.com" proxyPort="8080" proxyUsername="rkolli" proxyPassword="Nov@2017" doc:name="Salesforce: Basic Authentication"/>
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8080" doc:name="HTTP Listener Configuration"/>
+    <sfdc:config name="Salesforce__Basic_Authentication_inbound" username="krishnakolli@capgemini.com" password="krishna$K45" securityToken="dtzb5GMFk1PrxUDpVeV5BYie" doc:name="Salesforce: Basic Authentication"/>
+    <flow name="salesforce-appFlow" initialState="stopped">
+		<http:listener config-ref="HTTP_Listener_Configuration" path="/salesForce" allowedMethods="POST" doc:name="HTTP"/>
+        <message-properties-transformer scope="invocation" doc:name="Message Properties">
+            <add-message-property key="username" value="krishnakolli@capgemini.com"/>
+            <add-message-property key="password" value="krishna$K45"/>
+            <add-message-property key="securityToken" value="dtzb5GMFk1PrxUDpVeV5BYie"/>
+        </message-properties-transformer>
+		<dw:transform-message metadata:id="f147a582-5125-4a5a-8d4a-ecb9c53b1705" doc:name="Transform Message">
+			<dw:input-payload mimeType="application/json"/>
+			<dw:set-payload>
+				<![CDATA[%dw 1.0
+%output application/java
+---
+[{
+Name: payload.Name,
+BillingStreet: payload.BillingStreet,
+BillingCity: payload.BillingCity,
+BillingState: payload.BillingState,
+BillingPostalCode: payload.BillingPostalCode,
+BillingCountry: payload.BillingCountry
+}]]]>
+			</dw:set-payload>
+		</dw:transform-message>
+        <sfdc:create config-ref="Salesforce__Basic_Authentication_outbound" type="Account" doc:name="Salesforce">
+            <sfdc:objects ref="#[payload]"/>
+        </sfdc:create>
+        <set-payload value="#['Done']" doc:name="Set Payload"/>
+	</flow>
+    <flow name="salesforce-pocFlow" initialState="stopped">
+        <poll doc:name="Poll">
+            <fixed-frequency-scheduler frequency="2" timeUnit="MINUTES"/>
+            <sfdc:query config-ref="Salesforce__Basic_Authentication_inbound" query="dsql:SELECT BillingCity,BillingCountry,Name FROM Account" doc:name="Salesforce"/>
+        </poll>
+        <dw:transform-message metadata:id="aa95191f-e98e-40f9-a1f9-aa1cbd2f078e" doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+{
+	contact: payload map ((payload01 , indexOfPayload01) -> {
+		name: payload01.Name,
+		email: payload01.BillingCountry
+	})
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <logger message="==========================#[payload]" level="INFO" doc:name="Logger"/>
+    </flow>
+    <flow name="salesforce-pocFlow1" initialState="stopped">
+        <sfdc:subscribe-topic config-ref="Salesforce__Basic_Authentication_inbound" topic="/StreamEventUpdates" doc:name="Salesforce (Streaming)"/>
+        <logger message="====data #[payload]===========" level="INFO" doc:name="Logger"/>
+    </flow>
+</mule>

@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc"
+	xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:apikit="http://www.mulesoft.org/schema/mule/apikit" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/apikit http://www.mulesoft.org/schema/mule/apikit/current/mule-apikit.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.1.xsd">
+    <http:listener-config name="mock-api-httpListenerConfig" host="0.0.0.0" port="8082" doc:name="HTTP Listener Configuration"/>
+    <apikit:config name="mock-api-config" raml="mock-api.raml" consoleEnabled="false" doc:name="Router"/>
+    <flow name="mock-api-main">
+        <http:listener config-ref="mock-api-httpListenerConfig" path="/api/*" doc:name="HTTP"/>
+        <apikit:router config-ref="mock-api-config" doc:name="APIkit Router"/>
+        <exception-strategy ref="mock-api-apiKitGlobalExceptionMapping" doc:name="Reference Exception Strategy"/>
+    </flow>
+    <flow name="mock-api-console">
+        <http:listener config-ref="mock-api-httpListenerConfig" path="/console/*" doc:name="HTTP"/>
+        <apikit:console config-ref="mock-api-config" doc:name="APIkit Console"/>
+    </flow>
+    <flow name="get:/salesForce:mock-api-config">
+        <sfdc:query config-ref="Salesforce__Basic_Authentication_inbound" query="dsql:SELECT BillingCity,BillingCountry,Name FROM Account" doc:name="Salesforce"/>
+
+        <dw:transform-message  doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+{
+	contact: payload map ((payload01 , indexOfPayload01) -> {
+		name: payload01.Name,
+		email: payload01.BillingCountry
+	})
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <logger message="==========================#[payload]" level="INFO" doc:name="Logger"/>
+    </flow>
+    <flow name="post:/salesForce:mock-api-config">
+       <message-properties-transformer scope="invocation" doc:name="Message Properties">
+            <add-message-property key="username" value="krishnakolli@capgemini.com"/>
+            <add-message-property key="password" value="krishna$K45"/>
+            <add-message-property key="securityToken" value="dtzb5GMFk1PrxUDpVeV5BYie"/>
+        </message-properties-transformer>
+		<dw:transform-message doc:name="Transform Message">
+			<dw:input-payload mimeType="application/json"/>
+			<dw:set-payload>
+				<![CDATA[%dw 1.0
+%output application/java
+---
+[{
+Name: payload.Name,
+BillingStreet: payload.BillingStreet,
+BillingCity: payload.BillingCity,
+BillingState: payload.BillingState,
+BillingPostalCode: payload.BillingPostalCode,
+BillingCountry: payload.BillingCountry
+}]]]>
+			</dw:set-payload>
+		</dw:transform-message>
+        <sfdc:create config-ref="Salesforce__Basic_Authentication_outbound" type="Account" doc:name="Salesforce">
+            <sfdc:objects ref="#[payload]"/>
+        </sfdc:create>
+        <set-payload value="#['Done']" doc:name="Set Payload"/>
+    </flow>
+    <apikit:mapping-exception-strategy name="mock-api-apiKitGlobalExceptionMapping">
+        <apikit:mapping statusCode="404">
+            <apikit:exception value="org.mule.module.apikit.exception.NotFoundException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property"/>
+            <set-payload value="{ &quot;message&quot;: &quot;Resource not found&quot; }" doc:name="Set Payload"/>
+        </apikit:mapping>
+        <apikit:mapping statusCode="405">
+            <apikit:exception value="org.mule.module.apikit.exception.MethodNotAllowedException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property"/>
+            <set-payload value="{ &quot;message&quot;: &quot;Method not allowed&quot; }" doc:name="Set Payload"/>
+        </apikit:mapping>
+        <apikit:mapping statusCode="415">
+            <apikit:exception value="org.mule.module.apikit.exception.UnsupportedMediaTypeException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property"/>
+            <set-payload value="{ &quot;message&quot;: &quot;Unsupported media type&quot; }" doc:name="Set Payload"/>
+        </apikit:mapping>
+        <apikit:mapping statusCode="406">
+            <apikit:exception value="org.mule.module.apikit.exception.NotAcceptableException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property"/>
+            <set-payload value="{ &quot;message&quot;: &quot;Not acceptable&quot; }" doc:name="Set Payload"/>
+        </apikit:mapping>
+        <apikit:mapping statusCode="400">
+            <apikit:exception value="org.mule.module.apikit.exception.BadRequestException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property"/>
+            <set-payload value="{ &quot;message&quot;: &quot;Bad request&quot; }" doc:name="Set Payload"/>
+        </apikit:mapping>
+    </apikit:mapping-exception-strategy>
+</mule>
